@@ -1,7 +1,8 @@
 import axios from 'axios';
 import { getAuth } from 'firebase/auth';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+// Utilise l'URL publique de ton backend
+const API_URL = 'https://projet-integrateur.onrender.com/api';
 
 const api = axios.create({
   baseURL: API_URL
