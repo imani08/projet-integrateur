@@ -3,7 +3,8 @@ const path = require("path");
 const { v4: uuidv4 } = require('uuid');
 
 // Chargement sécurisé des credentials
-const serviceAccount = JSON.parse(process.env.FIREBASE_ADMIN_CREDENTIALS);
+const serviceAccountPath = path.join(__dirname, "./firebase-admin.json");
+const serviceAccount = require(serviceAccountPath);
 
 // Initialisation robuste de l'admin SDK
 if (!admin.apps.length) {
@@ -108,6 +109,9 @@ async function syncUserClaims(uid, forceRefresh = false) {
     throw error; // Propagation de l'erreur pour le traitement ultérieur
   }
 }
+
+
+// Version sécurisée de assignUserRole
 
 
 // ✅ Fonction corrigée — pas d'appel récursif
