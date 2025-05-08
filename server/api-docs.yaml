@@ -1,0 +1,42 @@
+openapi: 3.0.0
+info:
+  title: API Agriculture Intelligente
+  version: 1.0.0
+servers:
+  - url: http://localhost:5000/api
+paths:
+  /auth/login:
+    post:
+      summary: Connexion utilisateur
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email:
+                  type: string
+                password:
+                  type: string
+      responses:
+        '200':
+          description: Connexion réussie
+  /sensors:
+    get:
+      summary: Récupère les dernières données des capteurs
+      responses:
+        '200':
+          description: Données des capteurs
+  /actuators/{id}/toggle:
+    post:
+      summary: Active/désactive un actionneur
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Statut mis à jour

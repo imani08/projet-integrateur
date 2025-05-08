@@ -1,0 +1,70 @@
+name: Continuous Integration (CI)
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  NODE_VERSION: '18.x'
+  CI: true  # Force le mode CI pour tous les outils
+
+jobs:
+  lint-test-build:
+    name: Lint + Test + Build
+    runs-on: windows-latest
+    
+    steps:
+    # Étape 1: Checkout du code
+    - uses: actions/checkout@v4
+
+    # Étape 2: Configuration de Node.js
+    - name: Setup Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        cache: 'npm'
+
+    # Frontend - Client
+    - name: Install Frontend Dependencies
+      working-directory: ./client
+      run: npm ci
+
+    - name: Run Frontend Linter
+      working-directory: ./client
+      run: npm run lint  # Assurez-vous d'avoir un script "lint" dans package.json
+
+    - name: Run Frontend Tests
+      working-directory: ./client
+      run: npm test -- --watchAll=false --coverage
+      env:
+        CI: true  # Important pour les tests React
+
+    - name: Build Frontend
+      working-directory: ./client
+      run: npm run build
+      env:
+        REACT_APP_API_URL: "http://localhost:5000/api"  # URL de test
+
+    # Backend - Server
+    - name: Install Backend Dependencies
+      working-directory: ./server
+      run: npm ci
+
+    - name: Run Backend Linter
+      working-directory: ./server
+      run: npm run lint  # Doit être configuré dans package.json
+
+    - name: Run Backend Tests
+      working-directory: ./server
+      run: npm test -- --coverage
+      env:
+        NODE_ENV: test
+        # Si vous utilisez une DB de test
+
+    # Validation des builds
+    - name: Verify Build Artifacts
+      run: |
+        dir .\client\build\ /s  # Vérifie que le build React existe
+        dir .\server\ /s        # Vérifie les fichiers du serveur
