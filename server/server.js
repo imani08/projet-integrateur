@@ -5,7 +5,7 @@ const initFirestore = require("./services/initFirestore");
 
 // Permet de configurer CORS pour permettre à ton frontend sur Vercel de communiquer avec ton backend
 app.use(cors({
-  origin: 'https://ton-frontend-vercel-url.vercel.app', // URL de ton frontend Vercel
+  origin: 'https://projet-integrateur-nu.vercel.app', // URL de ton frontend Vercel
   methods: ['GET', 'POST'],
 }));
 
