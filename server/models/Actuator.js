@@ -39,6 +39,27 @@ class Actuator {
       throw err;
     }
   }
+
+  // ✅ Fonction pour créer ou mettre à jour selon le nom
+  static async upsertByName(name, status) {
+    const snapshot = await db.collection("actuators").where("name", "==", name).limit(1).get();
+
+    if (!snapshot.empty) {
+      const doc = snapshot.docs[0];
+      await db.collection("actuators").doc(doc.id).update({
+        status,
+        updatedAt: new Date(),
+      });
+      return { id: doc.id, updated: true };
+    } else {
+      const newDoc = await db.collection("actuators").add({
+        name,
+        status,
+        createdAt: new Date(),
+      });
+      return { id: newDoc.id, created: true };
+    }
+  }
 }
 
 module.exports = Actuator;
