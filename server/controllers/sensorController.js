@@ -97,7 +97,56 @@ const sensorController = {
       console.error("Erreur suppression sensor:", err);
       res.status(500).json({ error: "Erreur suppression" });
     }
+  },
+  async  handleIncomingFromWebSocket(data) {
+  try {
+    // ✅ Validation stricte
+    if (
+      !data ||
+      typeof data !== 'object' ||
+      typeof data.name !== 'string' ||
+      typeof data.value === 'undefined'
+    ) {
+      throw new Error("Données invalides reçues du WebSocket");
+    }
+
+    const sensorsCollection = db.collection('sensors');
+
+    // 🔍 Recherche d'un capteur existant avec le même nom
+    const existingSensorSnapshot = await sensorsCollection
+      .where('name', '==', data.name)
+      .limit(1)
+      .get();
+
+    if (!existingSensorSnapshot.empty) {
+      // 🔄 Mise à jour du champ 'value' uniquement
+      const docRef = existingSensorSnapshot.docs[0].ref;
+
+      await docRef.update({
+        value: data.value,
+        createdAt: admin.firestore.FieldValue.serverTimestamp()
+      });
+
+      console.log(`🔄 Capteur '${data.name}' mis à jour`);
+    } else {
+      // ➕ Nouveau document
+      const newSensor = {
+        name: data.name,
+        value: data.value,
+        unit: data.unit || '', // Par défaut vide si non fourni
+        createdAt: admin.firestore.FieldValue.serverTimestamp()
+      };
+
+      const newDocRef = await sensorsCollection.add(newSensor);
+      console.log(`✅ Nouveau capteur '${data.name}' créé (ID: ${newDocRef.id})`);
+    }
+
+  } catch (err) {
+    console.error("❌ Erreur dans handleIncomingFromWebSocket:", err.message, data);
   }
+}
 };
+
+
 
 module.exports = sensorController;
