@@ -78,21 +78,37 @@ const AppNavbar = ({ brandName = "Agriculture Intelligente" }) => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       setIsAuthenticated(!!user);
       
-      if (user) {
-        try {
-          const userDoc = await getDoc(doc(db, "users", user.uid));
-          if (userDoc.exists()) {
-            setUserRole(userDoc.data().role || "viewer");
+       if (user) {
+      console.log("✅ Utilisateur connecté :", user.uid);
+
+      try {
+        const userDocRef = doc(db, "users", user.uid);
+        const userDocSnap = await getDoc(userDocRef);
+
+        if (userDocSnap.exists()) {
+          const data = userDocSnap.data();
+          console.log("📄 Données utilisateur récupérées :", data);
+
+          const role = data?.role;
+          if (typeof role === "string") {
+            setUserRole(role);
+            console.log("✅ Rôle attribué :", role);
           } else {
+            console.warn("⚠️ Champ 'role' manquant ou invalide :", role);
             setUserRole("viewer");
           }
-        } catch (error) {
-          console.error("Error fetching user role:", error);
+        } else {
+          console.warn("⚠️ Document utilisateur non trouvé pour :", user.uid);
           setUserRole("viewer");
         }
-      } else {
-        setUserRole(null);
+      } catch (error) {
+        console.error("❌ Erreur Firestore :", error);
+        setUserRole("viewer");
       }
+    } else {
+      console.log("🔒 Aucun utilisateur connecté.");
+      setUserRole(null);
+    }
       
       setLoading(false);
     });

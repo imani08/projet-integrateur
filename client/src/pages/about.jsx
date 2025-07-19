@@ -15,19 +15,19 @@ const teamMembers = [
       image: "/images/imani.jpg" // remplace par ton chemin réel
     },
     {
-      name: "Sarah Kimona",
+      name: "Aristote Mudekereza",
       role: "Ingénieure IoT",
-      image: "/images/imani.jpg"
+      image: "/images/aristote.jpg"
     },
     {
-      name: "Paul Nsimba",
+      name: "Christina Ngalula",
       role: "Chef de projet",
-      image: "/images/imani.jpg"
+      image: "/images/christina.jpg"
     },
     {
-        name: "Paul Nsimba",
-        role: "Chef de projet",
-        image: "/images/imani.jpg"
+        name: "Jaques Battrawiya",
+        role: "Technicien en agriculture",
+        image: "/images/battra.jpg"
       }
   ];
 
