@@ -15,7 +15,7 @@ export const getSensorData = async () => {
     const nameToKeyMap = {
       'Température': 'temperature',
       'Humidité du sol': 'humidity',
-      'CO₂': 'co2',
+      'Gaz': 'gas',
       'Niveau de CO₂': 'co2',  // Ajout du nom "Niveau de CO₂"
       'Luminosité': 'light',
       "Niveau d'eau": 'waterLevel'
@@ -38,7 +38,7 @@ export const getSensorData = async () => {
     }, {
       temperature: 0,
       humidity: 0,
-      co2: 0,
+      gas: 0,
       light: 0,
       waterLevel: 0
     });

@@ -98,53 +98,68 @@ const sensorController = {
       res.status(500).json({ error: "Erreur suppression" });
     }
   },
-  async  handleIncomingFromWebSocket(data) {
+  
+  async handleIncomingFromWebSocket(data) {
   try {
-    // ✅ Validation stricte
-    if (
-      !data ||
-      typeof data !== 'object' ||
-      typeof data.name !== 'string' ||
-      typeof data.value === 'undefined'
-    ) {
+    // ✅ Vérifie que data est un objet
+    if (!data || typeof data !== 'object') {
       throw new Error("Données invalides reçues du WebSocket");
     }
 
     const sensorsCollection = db.collection('sensors');
 
-    // 🔍 Recherche d'un capteur existant avec le même nom
-    const existingSensorSnapshot = await sensorsCollection
-      .where('name', '==', data.name)
-      .limit(1)
-      .get();
+    // 🔁 Parcours chaque capteur dans l'objet reçu
+    for (const [key, value] of Object.entries(data)) {
+      // 🏷️ Création des métadonnées associées à chaque capteur
+      const type = key === 'temperature' ? 'temperature' :
+                   key === 'soil' ? 'humidity' :
+                   key === 'gas' ? 'gas' : 'unknown';
 
-    if (!existingSensorSnapshot.empty) {
-      // 🔄 Mise à jour du champ 'value' uniquement
-      const docRef = existingSensorSnapshot.docs[0].ref;
+      const unit = key === 'temperature' ? '°C' :
+                   key === 'soil' ? '%' :
+                   key === 'gas' ? 'ppm' : '';
 
-      await docRef.update({
-        value: data.value,
-        createdAt: admin.firestore.FieldValue.serverTimestamp()
-      });
+      const name = key === 'soil' ? 'Humidité du sol' :
+                   key === 'temperature' ? 'Température' :
+                   key === 'gas' ? 'Gaz' : key;
 
-      console.log(`🔄 Capteur '${data.name}' mis à jour`);
-    } else {
-      // ➕ Nouveau document
-      const newSensor = {
-        name: data.name,
-        value: data.value,
-        unit: data.unit || '', // Par défaut vide si non fourni
-        createdAt: admin.firestore.FieldValue.serverTimestamp()
-      };
+      // 🔍 Vérifie si le capteur existe déjà dans Firestore
+      const existingSensorSnapshot = await sensorsCollection
+        .where('name', '==', name)
+        .limit(1)
+        .get();
 
-      const newDocRef = await sensorsCollection.add(newSensor);
-      console.log(`✅ Nouveau capteur '${data.name}' créé (ID: ${newDocRef.id})`);
+      if (!existingSensorSnapshot.empty) {
+        // 🔄 Met à jour seulement le champ 'value'
+        const docRef = existingSensorSnapshot.docs[0].ref;
+
+        await docRef.update({
+          value: value,
+          createdAt: admin.firestore.FieldValue.serverTimestamp()
+        });
+
+        console.log(`🔄 Capteur '${name}' mis à jour avec value = ${value}`);
+      } else {
+        // ➕ Crée un nouveau capteur si non existant
+        const newSensor = {
+          name,
+          value,
+          type,
+          unit,
+          createdAt: admin.firestore.FieldValue.serverTimestamp()
+        };
+
+        const newDocRef = await sensorsCollection.add(newSensor);
+        console.log(`✅ Nouveau capteur '${name}' créé avec ID : ${newDocRef.id}`);
+      }
     }
 
   } catch (err) {
-    console.error("❌ Erreur dans handleIncomingFromWebSocket:", err.message, data);
+    console.error("❌ Erreur dans handleIncomingFromWebSocket :", err.message);
+    console.error("📦 Données reçues :", data);
   }
 }
+
 };
 
 
