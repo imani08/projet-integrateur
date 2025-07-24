@@ -1,92 +1,55 @@
-// services/mqttClient.js
-const mqtt = require("mqtt");
-const Sensor = require("../models/Sensor");
-const Actuator = require("../models/Actuator");
+const { db } = require("../services/firebase");
 
-function startMQTT() {
-  const client = mqtt.connect("mqtt://localhost:1883");
+class Sensor {
+  constructor(type, value, unit, createdAt = new Date()) {
+    this.type = type;
+    this.value = value;
+    this.unit = unit;
+    this.createdAt = createdAt;
+  }
 
-  // Seuils critiques pour l'automatisation
-  const SEUILS = {
-    humidite: 30,
-    thermique: 35,
-    co2: 1000,
-    luminosite: 150,
-  };
-
-  client.on("connect", () => {
-    console.log("✅ Connecté au broker MQTT");
-    client.subscribe("capteurs/#");
-    client.subscribe("actuators/#");
-  });
-
-  client.on("message", async (topic, message) => {
-    try {
-      const payload = JSON.parse(message.toString());
-
-      // === CAPTEURS ===
-      if (topic.startsWith("capteurs/")) {
-        const { type, value, unit } = payload;
-
-        if (!type || value === undefined || !unit) {
-          console.warn("⛔ Donnée capteur invalide:", payload);
-          return;
-        }
-
-        console.log(`📥 Capteur ${type}: ${value}${unit}`);
-
-        // 1. Sauvegarde dans Firestore
-        await Sensor.create({ type, value, unit, createdAt: new Date() });
-
-        // 2. Vérification seuils + déclenchement action
-        if (type === "humidite" && value < SEUILS.humidite) {
-          await declencher("pompe_irrigation", "on");
-        }
-
-        if (type === "thermique" && value > SEUILS.thermique) {
-          await declencher("ventilateur", "on");
-        }
-
-        if (type === "co2" && value > SEUILS.co2) {
-          await declencher("ventilateur", "on");
-        }
-
-        if (type === "luminosite" && value < SEUILS.luminosite) {
-          await declencher("lumiere", "on");
-        }
+  static async getAll() {
+    const snapshot = await db.collection("sensors").orderBy("createdAt", "desc").get();
+  
+    const latestByType = {};
+    const typeToName = {
+      thermique: "Température",
+      humidite: "Humidité du sol",
+      co2: "Niveau de CO₂",
+      luminosite: "Luminosité",
+      eau: "Niveau d'eau"
+    };
+  
+    snapshot.docs.forEach(doc => {
+      const data = doc.data();
+      const type = data.type;
+      if (!latestByType[type]) {
+        latestByType[type] = {
+          id: doc.id,
+          name: typeToName[type] || type,
+          ...data
+        };
       }
+    });
+  
+    return Object.values(latestByType);
+  }
+  
 
-      // === ACTIONNEURS ===
-      if (topic.startsWith("actuators/")) {
-        const { name, status } = payload;
+  static async create(data) {
+    const docRef = await db.collection("sensors").add(data);
+    return { id: docRef.id };
+  }
 
-        if (!name || !status) {
-          console.warn("⛔ Message actionneur invalide:", payload);
-          return;
-        }
+  static async getById(id) {
+    const doc = await db.collection("sensors").doc(id).get();
+    if (!doc.exists) return null;
+    return { id: doc.id, ...doc.data() };
+  }
 
-        const result = await Actuator.upsertByName(name, status);
-        console.log("✅ Actuator synchronisé:", result);
-      }
-
-    } catch (err) {
-      console.error("❌ Erreur de traitement MQTT:", err.message);
-    }
-  });
-
-  client.on("error", (err) => {
-    console.error("❌ Erreur MQTT:", err);
-  });
-
-  // Fonction pour envoyer commande à un actionneur + enregistrer dans Firestore
-  async function declencher(name, status) {
-    const message = JSON.stringify({ name, status });
-    const topic = `actuators/${name}`;
-
-    client.publish(topic, message);
-    await Actuator.upsertByName(name, status);
-    console.log(`⚙️ Action automatique déclenchée: ${name} → ${status}`);
+  static async deleteById(id) {
+    await db.collection("sensors").doc(id).delete();
   }
 }
 
-module.exports = startMQTT;
+module.exports = Sensor;
