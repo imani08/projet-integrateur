@@ -1,5 +1,6 @@
 const Actuator = require("../models/Actuator");
 const { db } = require('../services/firebase');
+const { broadcast } = require('../services/websocketService');
 
 const actuatorController = {
   async getAll(req, res) {
@@ -84,7 +85,27 @@ const actuatorController = {
     } catch (err) {
       res.status(500).json({ error: "Erreur lors de la suppression de l'actionneur" });
     }
+  },
+  
+  async sendStatusToESP32(req, res) {
+  try {
+    const actuator = await Actuator.getById(req.params.id);
+    if (!actuator) return res.status(404).json({ error: "Actionneur non trouvé" });
+
+    const message = {
+      type: "actuatorStatus",
+      id: actuator.id,
+      status: actuator.status
+    };
+
+    broadcast(message); // envoie à tous les clients connectés (ESP32 inclus)
+
+    res.json({ success: true, message: "Status envoyé au ESP32", data: message });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Erreur lors de l'envoi du statut" });
   }
+}
 };
 
 module.exports = actuatorController;
