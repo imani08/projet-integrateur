@@ -87,8 +87,20 @@ export const deleteSensor = async (id) => {
   return response.data;
 };
 
-// ✅ ACTUATORS
-// ✅ ACTUATORS
+// ==================== LOGS ====================
+export const getLogs = async (limit = 50, startAfter) => {
+  try {
+    const params = { limit };
+    if (startAfter) params.startAfter = startAfter.toISOString ? startAfter.toISOString() : startAfter;
+    const response = await api.get('/logs', { params });
+    return response.data;
+  } catch (error) {
+    console.error("Erreur récupération des logs:", error);
+    throw error;
+  }
+};
+
+
 export const getActuators = async () => {
   const response = await api.get('/actuators');
   return response.data.map(actuator => ({
@@ -161,12 +173,6 @@ export const updateSystemSettings = async (settings) => {
 // ✅ USER
 export const updateUserProfile = async (profileData) => {
   const response = await api.put('/users/profile', profileData);
-  return response.data;
-};
-
-// ✅ LOGS
-export const getLogs = async () => {
-  const response = await api.get('/logs');
   return response.data;
 };
 

@@ -101,16 +101,14 @@ const sensorController = {
   
   async handleIncomingFromWebSocket(data) {
   try {
-    // ✅ Vérifie que data est un objet
     if (!data || typeof data !== 'object') {
       throw new Error("Données invalides reçues du WebSocket");
     }
 
     const sensorsCollection = db.collection('sensors');
+    const logsCollection = db.collection('logs'); //  Historique complet
 
-    // 🔁 Parcours chaque capteur dans l'objet reçu
     for (const [key, value] of Object.entries(data)) {
-      // 🏷️ Création des métadonnées associées à chaque capteur
       const type = key === 'temperature' ? 'temperature' :
                    key === 'soil' ? 'humidity' :
                    key === 'gas' ? 'gas' : 'unknown';
@@ -123,24 +121,26 @@ const sensorController = {
                    key === 'temperature' ? 'Température' :
                    key === 'gas' ? 'Gaz' : key;
 
-      // 🔍 Vérifie si le capteur existe déjà dans Firestore
+      let sensorId;
+
+      // 🔍 Cherche le capteur existant
       const existingSensorSnapshot = await sensorsCollection
         .where('name', '==', name)
         .limit(1)
         .get();
 
       if (!existingSensorSnapshot.empty) {
-        // 🔄 Met à jour seulement le champ 'value'
+        //  Met à jour la valeur actuelle
         const docRef = existingSensorSnapshot.docs[0].ref;
+        sensorId = existingSensorSnapshot.docs[0].id;
 
         await docRef.update({
           value: value,
           createdAt: admin.firestore.FieldValue.serverTimestamp()
         });
 
-        console.log(`🔄 Capteur '${name}' mis à jour avec value = ${value}`);
       } else {
-        // ➕ Crée un nouveau capteur si non existant
+        //  Crée un nouveau capteur
         const newSensor = {
           name,
           value,
@@ -148,20 +148,30 @@ const sensorController = {
           unit,
           createdAt: admin.firestore.FieldValue.serverTimestamp()
         };
-
         const newDocRef = await sensorsCollection.add(newSensor);
-        console.log(`✅ Nouveau capteur '${name}' créé avec ID : ${newDocRef.id}`);
+        sensorId = newDocRef.id;
       }
+
+      //  Ajoute systématiquement un historique (même si valeur identique)
+      await logsCollection.add({
+        sensorId,
+        name,
+        value,
+        type,
+        unit,
+        timestamp: admin.firestore.FieldValue.serverTimestamp()
+      });
+
+      console.log(`Historique enregistré : ${name} = ${value}${unit}`);
     }
 
   } catch (err) {
-    console.error("❌ Erreur dans handleIncomingFromWebSocket :", err.message);
-    console.error("📦 Données reçues :", data);
+    console.error(" Erreur dans handleIncomingFromWebSocket :", err.message);
+    console.error(" Données reçues :", data);
   }
 }
 
 };
-
 
 
 module.exports = sensorController;
