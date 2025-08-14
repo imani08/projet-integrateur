@@ -1,4 +1,5 @@
-const { db } = require("../services/firebase");
+const { db, admin } = require("../services/firebase");
+const Log = require("../models/Log");
 
 /**
  * Récupère les logs depuis Firestore avec pagination
@@ -8,11 +9,11 @@ const { db } = require("../services/firebase");
  */
 exports.getLogs = async (req, res) => {
   try {
-    // Lecture des paramètres de requête
     const limit = parseInt(req.query.limit) || 50;
-    const startAfter = req.query.startAfter ? new Date(req.query.startAfter) : null;
+    const startAfter = req.query.startAfter
+      ? admin.firestore.Timestamp.fromDate(new Date(req.query.startAfter))
+      : null;
 
-    // Construction de la requête Firestore
     let query = db.collection("logs")
                   .orderBy("timestamp", "desc")
                   .limit(limit);
@@ -23,20 +24,18 @@ exports.getLogs = async (req, res) => {
 
     const snapshot = await query.get();
 
-    // Si aucun log trouvé, on renvoie un tableau vide
     if (snapshot.empty) {
       return res.status(200).json({ logs: [], nextStartAfter: null });
     }
 
-    // Transformation des documents Firestore en objets JSON
-    const logs = snapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data()
-    }));
+    // Transformer les documents Firestore en instances du modèle Log
+    const logs = snapshot.docs.map(doc => new Log({ id: doc.id, ...doc.data() }));
 
-    // Timestamp du dernier log pour pagination
+    // Timestamp du dernier log pour la pagination
     const lastLog = logs[logs.length - 1];
-    const nextStartAfter = lastLog && lastLog.timestamp ? lastLog.timestamp.toDate() : null;
+    const nextStartAfter = lastLog && lastLog.timestamp 
+      ? lastLog.timestamp.toDate().toISOString()
+      : null;
 
     res.status(200).json({
       logs,

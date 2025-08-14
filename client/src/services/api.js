@@ -91,9 +91,23 @@ export const deleteSensor = async (id) => {
 export const getLogs = async (limit = 50, startAfter) => {
   try {
     const params = { limit };
-    if (startAfter) params.startAfter = startAfter.toISOString ? startAfter.toISOString() : startAfter;
-    const response = await api.get('/logs', { params });
-    return response.data;
+
+    // Convertir startAfter en ISO string si c'est un Date ou Timestamp
+    if (startAfter) {
+      if (startAfter.toDate) { 
+        // Cas Firestore Timestamp
+        params.startAfter = startAfter.toDate().toISOString();
+      } else if (startAfter instanceof Date) {
+        params.startAfter = startAfter.toISOString();
+      } else {
+        params.startAfter = startAfter; // déjà une string ISO
+      }
+    }
+
+    // Appel à l'API /api/log
+    const response = await api.get('/log', { params });
+
+    return response.data; // { logs: [...], nextStartAfter: "..." }
   } catch (error) {
     console.error("Erreur récupération des logs:", error);
     throw error;
