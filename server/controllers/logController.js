@@ -1,5 +1,5 @@
 const { db, admin } = require("../services/firebase");
-const Log = require("../models/Log");
+const Log = require("../models/logs");
 
 /**
  * Récupère les logs depuis Firestore avec pagination
