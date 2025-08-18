@@ -22,7 +22,7 @@ const normalizeStatus = (status) => {
 };
 
 // Couleur graphique historique
-const getLineColor = (sensor, value) => {
+const _getLineColor = (sensor, value) => {
   switch (sensor) {
     case 'temperature':
       if (value < 18) return '#0088FE';
@@ -288,7 +288,7 @@ useEffect(() => {
 return (
   <Container className="dashboard" fluid>
     {/* --- TITRE PRINCIPAL --- */}
-    <h1 className="text-center mb-4">Tableau de Bord Intelligent</h1>
+    <h1 className="text-center mb-4">Tableau de Bord</h1>
 
     <Tabs defaultActiveKey="overview" className="mb-4">
 
@@ -371,30 +371,77 @@ return (
           {/* Graphique Historique */}
 <Col xs={12} className="mb-4">
   <h3 className="text-center mb-3">Évolution Historique</h3>
-  <div style={{ height: '400px', background: '#fff', borderRadius: '10px', padding: '20px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}>
+  <div
+    style={{
+      height: '400px',
+      background: '#fff',
+      borderRadius: '10px',
+      padding: '20px',
+      boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
+    }}
+  >
     <ResponsiveContainer width="100%" height="100%">
-      <LineChart 
-        data={historicalData.filter(item => {
-          const logDate = new Date(item.timestamp); // utiliser directement le timestamp
-          const now = new Date();
-          if(filterPeriod === 'heure') return logDate >= new Date(now.getTime() - 60*60*1000);
-          if(filterPeriod === 'jour') return logDate >= new Date(now.getTime() - 24*60*60*1000);
-          if(filterPeriod === 'semaine') return logDate >= new Date(now.getTime() - 7*24*60*60*1000);
-          if(filterPeriod === 'mois') return logDate >= new Date(now.getTime() - 30*24*60*60*1000);
-          return true;
-        }).map(item => ({ time: new Date(item.timestamp).toLocaleTimeString(), value: item[selectedSensor] || 0 }))}
+      <LineChart
+        data={historicalData
+          .filter(item => {
+            const logDate = new Date(item.timestamp);
+            const now = new Date();
+            if (filterPeriod === 'heure') return logDate >= new Date(now.getTime() - 60*60*1000);
+            if (filterPeriod === 'jour') return logDate >= new Date(now.getTime() - 24*60*60*1000);
+            if (filterPeriod === 'semaine') return logDate >= new Date(now.getTime() - 7*24*60*60*1000);
+            if (filterPeriod === 'mois') return logDate >= new Date(now.getTime() - 30*24*60*60*1000);
+            return true;
+          })
+          .map(item => ({
+            time: new Date(item.timestamp).toLocaleTimeString(),
+            value: item[selectedSensor] ?? 0
+          }))
+        }
+        margin={{ top: 20, right: 20, left: 20, bottom: 60 }} // <-- plus d'espace pour le label X
       >
         <CartesianGrid strokeDasharray="3 3" />
-        <XAxis dataKey="time" />
-        <YAxis />
-        <Tooltip />
-        <Legend />
+
+        {/* Axe X : temps */}
+        <XAxis
+          dataKey="time"
+          label={{
+            value: 'Temps',
+            position: 'bottom', // <-- label sous l'axe
+            offset: 20,         // <-- espace entre label et graphique
+            style: { textAnchor: 'middle', fontWeight: 'bold', fill: '#555' }
+          }}
+        />
+        {/* Axe Y : valeurs du capteur */}
+        <YAxis
+          domain={[
+            dataMin => Math.floor(dataMin * 0.9),
+            dataMax => Math.ceil(dataMax * 1.1)
+          ]}
+          label={{
+            value:
+              selectedSensor === 'temperature' ? 'Température (°C)' :
+              selectedSensor === 'humidity' ? 'Humidité (%)' :
+              selectedSensor === 'co2' ? 'CO₂ (ppm)' :
+              selectedSensor === 'light' ? 'Luminosité (lx)' :
+              'Niveau d’eau (cm)',
+            angle: -90,
+            position: 'insideLeft',
+            style: { textAnchor: 'middle', fill: '#555', fontWeight: 'bold' }
+          }}
+        />
+
+        <Tooltip 
+          formatter={value => [`${value}`, selectedSensor.charAt(0).toUpperCase() + selectedSensor.slice(1)]} 
+          labelFormatter={label => `Heure: ${label}`}
+        />
+
+        {/* Ligne simple, uniforme */}
         <Line
           type="monotone"
           dataKey="value"
-          stroke={getLineColor(selectedSensor, historicalData[historicalData.length-1]?.[selectedSensor])}
+          stroke="#007BFF"
           isAnimationActive={false}
-          dot={{ r: 2 }}
+          dot={{ r: 3 }}
         />
       </LineChart>
     </ResponsiveContainer>
@@ -554,8 +601,6 @@ return (
     </Tabs>
   </Container>
 );
-
-
 };
 
 export default Dashboard;

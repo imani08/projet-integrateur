@@ -18,13 +18,13 @@ async function signUp() {
   const data = await res.json();
   if (data.error) {
     if (data.error.message === "EMAIL_EXISTS") {
-      console.log("✅ L'utilisateur existe déjà, on passe à la connexion...");
+      console.log("L'utilisateur existe déjà, on passe à la connexion...");
     } else {
-      console.error("❌ Erreur lors de l'inscription :", data.error.message);
+      console.error(" Erreur lors de l'inscription :", data.error.message);
       return null;
     }
   } else {
-    console.log("✅ Utilisateur créé !");
+    console.log("Utilisateur créé !");
   }
 
   return true;
@@ -44,7 +44,7 @@ async function signIn() {
 
   const data = await res.json();
   if (data.error) {
-    console.error("❌ Erreur de connexion :", data.error.message);
+    console.error(" Erreur de connexion :", data.error.message);
     return null;
   }
 

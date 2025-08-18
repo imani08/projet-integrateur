@@ -8,14 +8,14 @@ const authMiddleware = async (req, res, next) => {
     const decoded = await auth.verifyIdToken(token);
     const uid = decoded.uid;
 
-    // 🔄 Récupération de l'utilisateur dans Firestore
+    //  Récupération de l'utilisateur dans Firestore
     const userRef = db.collection("users").doc(uid);
     const userDoc = await userRef.get();
 
     let userData;
 
     if (!userDoc.exists) {
-      // 🆕 Création automatique du document utilisateur si non existant
+      //  Création automatique du document utilisateur si non existant
       userData = {
         email: decoded.email || null,
         role: "viewer", // Rôle par défaut pour les nouveaux utilisateurs
@@ -50,7 +50,7 @@ const authMiddleware = async (req, res, next) => {
 };
 
 
-// ✅ Vérifie que l'utilisateur a un rôle attribué
+//  Vérifie que l'utilisateur a un rôle attribué
 const checkHasRole = (req, res, next) => {
   if (!req.user?.role) {
     return res.status(403).json({ error: "Accès refusé : rôle non attribué." });
