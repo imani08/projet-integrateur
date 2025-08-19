@@ -88,24 +88,68 @@ const actuatorController = {
   },
   
   async sendStatusToESP32(req, res) {
-  try {
-    const actuator = await Actuator.getById(req.params.id);
-    if (!actuator) return res.status(404).json({ error: "Actionneur non trouvé" });
+    try {
+      const { id, name } = req.params; // id optionnel, name nécessaire si création
+      const newStatus = req.body.status;
 
-    const message = {
-      type: "actuatorStatus",
-      id: actuator.id,
-      status: actuator.status
-    };
+      if (typeof newStatus === 'undefined') {
+        return res.status(400).json({ error: "Statut manquant dans la requête" });
+      }
 
-    broadcast(message); // envoie à tous les clients connectés (ESP32 inclus)
+      let actuatorData;
 
-    res.json({ success: true, message: "Status envoyé au ESP32", data: message });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Erreur lors de l'envoi du statut" });
+      // 1️⃣ Récupérer ou créer l'actionneur
+      if (id) {
+        const actuatorRef = db.collection("actuators").doc(id);
+        const snap = await actuatorRef.get();
+
+        if (!snap.exists) {
+          if (!name) return res.status(400).json({ error: "Nom requis pour créer un nouvel actionneur" });
+          actuatorData = await Actuator.upsertByName(name, newStatus);
+        } else {
+          await actuatorRef.update({ status: newStatus, updatedAt: new Date() });
+          actuatorData = { id: snap.id, ...snap.data(), status: newStatus };
+        }
+      } else {
+        if (!name) return res.status(400).json({ error: "Nom requis pour créer un actionneur" });
+        actuatorData = await Actuator.upsertByName(name, newStatus);
+      }
+
+      const actuatorRef = db.collection("actuators").doc(actuatorData.id);
+
+      // 2️⃣ Envoi initial du statut
+      broadcast({
+        type: "actuatorStatus",
+        id: actuatorData.id,
+        status: actuatorData.status
+      });
+
+      // 3️⃣ Listener temps réel global (évite doublons)
+      if (!listenersMap.has(actuatorData.id)) {
+        const unsubscribe = actuatorRef.onSnapshot((doc) => {
+          if (doc.exists) {
+            const data = doc.data();
+            broadcast({
+              type: "actuatorStatus",
+              id: doc.id,
+              status: data.status
+            });
+          }
+        });
+        listenersMap.set(actuatorData.id, unsubscribe);
+      }
+
+      res.json({
+        success: true,
+        message: "Statut mis à jour et listener temps réel activé pour l'ESP32",
+        data: actuatorData
+      });
+
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Erreur lors de l'envoi du statut" });
+    }
   }
-}
 };
 
 module.exports = actuatorController;
