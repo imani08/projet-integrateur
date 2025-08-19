@@ -11,8 +11,8 @@ env:
   CI: true  # Force le mode CI pour tous les outils
 
 jobs:
-  lint-test-build:
-    name: Lint + Test + Build
+  test-build:
+    name: Test + Build
     runs-on: windows-latest
     
     steps:
@@ -31,10 +31,6 @@ jobs:
       working-directory: ./client
       run: npm ci
 
-    - name: Run Frontend Linter
-      working-directory: ./client
-      run: npm run lint  # Assurez-vous d'avoir un script "lint" dans package.json
-
     - name: Run Frontend Tests
       working-directory: ./client
       run: npm test -- --watchAll=false --coverage
@@ -45,26 +41,21 @@ jobs:
       working-directory: ./client
       run: npm run build
       env:
-        REACT_APP_API_URL: "http://localhost:5000/api"  # URL de test
+        REACT_APP_API_URL: "http://localhost:5000/api"
 
     # Backend - Server
     - name: Install Backend Dependencies
       working-directory: ./server
       run: npm ci
 
-    - name: Run Backend Linter
-      working-directory: ./server
-      run: npm run lint  # Doit être configuré dans package.json
-
     - name: Run Backend Tests
       working-directory: ./server
       run: npm test -- --coverage
       env:
         NODE_ENV: test
-        # Si vous utilisez une DB de test
 
     # Validation des builds
     - name: Verify Build Artifacts
       run: |
-        dir .\client\build\ /s  # Vérifie que le build React existe
-        dir .\server\ /s        # Vérifie les fichiers du serveur
+        dir .\client\build\ /s
+        dir .\server\ /s

@@ -8,7 +8,7 @@ exports.initWebSocketServer = (server) => {
   wss = new WebSocket.Server({ server });
 
   wss.on('connection', (ws) => {
-    console.log('📶 ESP32 connecté via WebSocket');
+    console.log('ESP32 connecté via WebSocket');
     clients.add(ws);
 
     ws.on('message', async (message) => {

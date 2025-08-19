@@ -99,77 +99,107 @@ const sensorController = {
     }
   },
   
-  async handleIncomingFromWebSocket(data) {
+async handleIncomingFromWebSocket(data) {
   try {
     if (!data || typeof data !== 'object') {
       throw new Error("Données invalides reçues du WebSocket");
     }
 
     const sensorsCollection = db.collection('sensors');
-    const logsCollection = db.collection('logs'); //  Historique complet
+    const logsCollection = db.collection('logs');
 
+    const INTERVAL_MINUTES = 5;
+    const MAX_LOGS = 15;
+
+    // pour chaque mesure reçue
     for (const [key, value] of Object.entries(data)) {
-      const type = key === 'temperature' ? 'temperature' :
-                   key === 'soil' ? 'humidity' :
-                   key === 'gas' ? 'gas' : 'unknown';
+      const type = key === 'temperature' ? 'temperature'
+                 : key === 'soil' ? 'humidity'
+                 : key === 'gas' ? 'gas' : 'unknown';
 
-      const unit = key === 'temperature' ? '°C' :
-                   key === 'soil' ? '%' :
-                   key === 'gas' ? 'ppm' : '';
+      const unit = key === 'temperature' ? '°C'
+                 : key === 'soil' ? '%'
+                 : key === 'gas' ? 'ppm' : '';
 
-      const name = key === 'soil' ? 'Humidité du sol' :
-                   key === 'temperature' ? 'Température' :
-                   key === 'gas' ? 'Gaz' : key;
+      const name = key === 'soil' ? 'Humidité du sol'
+                 : key === 'temperature' ? 'Température'
+                 : key === 'gas' ? 'Gaz' : key;
 
-      let sensorId;
-
-      // 🔍 Cherche le capteur existant
+      // cherche capteur existant
       const existingSensorSnapshot = await sensorsCollection
         .where('name', '==', name)
         .limit(1)
         .get();
 
+      let sensorId;
+      let sensorDocRef;
+
       if (!existingSensorSnapshot.empty) {
-        //  Met à jour la valeur actuelle
-        const docRef = existingSensorSnapshot.docs[0].ref;
-        sensorId = existingSensorSnapshot.docs[0].id;
+        const doc = existingSensorSnapshot.docs[0];
+        sensorDocRef = doc.ref;
+        sensorId = doc.id;
 
-        await docRef.update({
+        // mise à jour de la valeur (non-transactionnelle, ok ici)
+        await sensorDocRef.update({
           value: value,
-          createdAt: admin.firestore.FieldValue.serverTimestamp()
+          updatedAt: admin.firestore.FieldValue.serverTimestamp()
         });
-
       } else {
-        //  Crée un nouveau capteur
+        // création capteur
         const newSensor = {
           name,
           value,
           type,
           unit,
-          createdAt: admin.firestore.FieldValue.serverTimestamp()
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          updatedAt: admin.firestore.FieldValue.serverTimestamp()
         };
         const newDocRef = await sensorsCollection.add(newSensor);
         sensorId = newDocRef.id;
+        sensorDocRef = newDocRef;
       }
 
-      //  Ajoute systématiquement un historique (même si valeur identique)
-      await logsCollection.add({
-        sensorId,
-        name,
-        value,
-        type,
-        unit,
-        timestamp: admin.firestore.FieldValue.serverTimestamp()
-      });
+      // calcul cutoff comme Timestamp firestore
+      const now = new Date();
+      const cutoffDate = new Date(now.getTime() - INTERVAL_MINUTES * 60000);
+      const cutoffTs = admin.firestore.Timestamp.fromDate(cutoffDate);
 
-      console.log(`Historique enregistré : ${name} = ${value}${unit}`);
+      // transaction atomique : lire les logs récents et n'ajouter que si < MAX_LOGS
+      await db.runTransaction(async (transaction) => {
+        // Exécuter la query via transaction.get
+        const recentQuery = logsCollection
+          .where("sensorId", "==", sensorId)
+          .where("timestamp", ">", cutoffTs);
+
+        const recentSnap = await transaction.get(recentQuery);
+
+        if (recentSnap.size < MAX_LOGS) {
+          const newLogRef = logsCollection.doc(); // doc id auto
+          transaction.set(newLogRef, {
+            sensorId,
+            name,
+            value,
+            type,
+            unit,
+            timestamp: admin.firestore.FieldValue.serverTimestamp()
+          });
+          // debug
+          console.log(`Log enregistré (transaction) : ${name} = ${value}${unit}`);
+        } else {
+          console.log(`⛔ Limite atteinte : ${MAX_LOGS} logs déjà pour ${name} dans les ${INTERVAL_MINUTES} dernières minutes.`);
+        }
+      });
     }
 
   } catch (err) {
-    console.error(" Erreur dans handleIncomingFromWebSocket :", err.message);
-    console.error(" Données reçues :", data);
+    console.error("Erreur dans handleIncomingFromWebSocket :", err);
+    // si tu veux plus de détail
+    if (err && err.code) console.error("Code erreur Firestore :", err.code, err.details || "");
+    console.error("Données reçues :", data);
   }
 }
+
+
 
 };
 
