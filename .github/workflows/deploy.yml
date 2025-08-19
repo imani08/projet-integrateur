@@ -14,12 +14,12 @@ jobs:
   test-build:
     name: Test + Build
     runs-on: windows-latest
-    
+
     steps:
     # Étape 1: Checkout du code
     - uses: actions/checkout@v4
 
-    # Étape 2: Configuration de Node.js
+    # Étape 2: Setup Node.js
     - name: Setup Node.js
       uses: actions/setup-node@v3
       with:
@@ -33,15 +33,13 @@ jobs:
 
     - name: Run Frontend Tests
       working-directory: ./client
-      run: npm test -- --watchAll=false --coverage
+      run: npm test
       env:
-        CI: true  # Important pour les tests React
+        CI: true
 
     - name: Build Frontend
       working-directory: ./client
       run: npm run build
-      env:
-        REACT_APP_API_URL: "http://localhost:5000/api"
 
     # Backend - Server
     - name: Install Backend Dependencies
@@ -50,12 +48,12 @@ jobs:
 
     - name: Run Backend Tests
       working-directory: ./server
-      run: npm test -- --coverage
+      run: npm test
       env:
         NODE_ENV: test
 
     # Validation des builds
     - name: Verify Build Artifacts
       run: |
-        dir .\client\build\ /s
+        dir .\client\dist\ /s   # Dossier de build Vite
         dir .\server\ /s
