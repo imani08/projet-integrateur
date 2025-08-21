@@ -92,40 +92,20 @@ export const deleteSensor = async (id) => {
 // Cache simple par capteur pour éviter de re-call l'API trop souvent
 const _cacheBySensor = new Map();   // sensorKey -> { ts: Date.now(), data }
 const FIVE_MINUTES_MS = 5 * 60 * 1000;
-const MAX_PER_WINDOW = 15;
 
-export const getLogs = async (limit = 15, startAfter, sensor) => {
+export const getLogs = async (limit = 1000, startAfter, sensor) => {
   try {
-    limit = typeof limit === 'number' ? limit : 15;
     const sensorKey = sensor || 'all';
-
     const cached = _cacheBySensor.get(sensorKey);
     const now = Date.now();
 
     if (cached && (now - cached.ts) < FIVE_MINUTES_MS) {
-      const rows = cached.data.logs || cached.data;
-      const todayRows = rows.filter(log => {
-        const logDate = new Date(log.timestamp || log.ts); // adapter selon le champ timestamp
-        const today = new Date();
-        return logDate.getFullYear() === today.getFullYear() &&
-               logDate.getMonth() === today.getMonth() &&
-               logDate.getDate() === today.getDate();
-      });
-      const limitedRows = todayRows.slice(0, Math.min(limit, MAX_PER_WINDOW));
-      return { ...cached.data, logs: limitedRows };
+      return cached.data; 
     }
 
-    const effectiveLimit = Math.min(limit, MAX_PER_WINDOW);
-    const startOfDay = new Date();
-    startOfDay.setHours(0, 0, 0, 0);
-
-    const params = {
-      limit: effectiveLimit,
-      since: startOfDay.toISOString() // on force depuis le début du jour
-    };
-
+    const params = {};
+    if (limit) params.limit = limit;
     if (sensor) params.sensor = sensor;
-
     if (startAfter) {
       if (startAfter.toDate) params.startAfter = startAfter.toDate().toISOString();
       else if (startAfter instanceof Date) params.startAfter = startAfter.toISOString();
@@ -135,19 +115,8 @@ export const getLogs = async (limit = 15, startAfter, sensor) => {
     const response = await api.get('/log', { params });
     const payload = response.data;
 
-    // filtrer à nouveau côté client pour s'assurer du jour
-    if (Array.isArray(payload.logs)) {
-      const todayLogs = payload.logs.filter(log => {
-        const logDate = new Date(log.timestamp || log.ts);
-        const today = new Date();
-        return logDate.getFullYear() === today.getFullYear() &&
-               logDate.getMonth() === today.getMonth() &&
-               logDate.getDate() === today.getDate();
-      });
-      payload.logs = todayLogs.slice(0, effectiveLimit);
-    }
-
     _cacheBySensor.set(sensorKey, { ts: now, data: payload });
+
     return payload;
 
   } catch (error) {

@@ -1,46 +1,55 @@
 const { db, admin } = require("../services/firebase");
 const Log = require("../models/log");
 
-/**
- * Récupère les logs depuis Firestore avec pagination
- * @route GET /api/logs
- * @queryParam {number} limit - Nombre de logs à récupérer (par défaut 50)
- * @queryParam {string} startAfter - Timestamp ISO du dernier log pour pagination
- */
+const MAX_PER_SENSOR = 5;
+
 exports.getLogs = async (req, res) => {
   try {
     const limit = parseInt(req.query.limit) || 50;
-    const startAfter = req.query.startAfter
-      ? admin.firestore.Timestamp.fromDate(new Date(req.query.startAfter))
-      : null;
 
-    let query = db.collection("logs")
-                  .orderBy("timestamp", "desc")
-                  .limit(limit);
-
-    if (startAfter) {
-      query = query.startAfter(startAfter);
-    }
-
-    const snapshot = await query.get();
+    const snapshot = await db.collection("logs")
+      .orderBy("timestamp", "desc")
+      .limit(limit * 10)
+      .get();
 
     if (snapshot.empty) {
       return res.status(200).json({ logs: [], nextStartAfter: null });
     }
 
-    // Transformer les documents Firestore en instances du modèle Log
-    const logs = snapshot.docs.map(doc => new Log({ id: doc.id, ...doc.data() }));
+    const logs = snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    }));
 
-    // Timestamp du dernier log pour la pagination
-    const lastLog = logs[logs.length - 1];
-    const nextStartAfter = lastLog && lastLog.timestamp 
-      ? lastLog.timestamp.toDate().toISOString()
+    // --- Grouper par capteur en excluant la pompe ---
+    const groupedBySensor = {};
+    for (const log of logs) {
+      if (log.name === 'pompe') continue; // Ignorer la pompe
+      const sensorId = log.sensorId;
+      if (!groupedBySensor[sensorId]) groupedBySensor[sensorId] = [];
+      if (groupedBySensor[sensorId].length < MAX_PER_SENSOR) {
+        groupedBySensor[sensorId].push(log);
+      }
+    }
+
+    // --- Concat tous les logs par capteur ---
+    const finalLogs = Object.values(groupedBySensor).flat();
+
+    // --- Trier globalement par timestamp décroissant ---
+    finalLogs.sort((a, b) => {
+      const aTs = a.timestamp.toDate ? a.timestamp.toDate().getTime() : new Date(a.timestamp).getTime();
+      const bTs = b.timestamp.toDate ? b.timestamp.toDate().getTime() : new Date(b.timestamp).getTime();
+      return bTs - aTs;
+    });
+
+    const limitedLogs = finalLogs.slice(0, limit);
+
+    const lastLog = limitedLogs[limitedLogs.length - 1];
+    const nextStartAfter = lastLog && lastLog.timestamp
+      ? lastLog.timestamp.toDate ? lastLog.timestamp.toDate().toISOString() : new Date(lastLog.timestamp).toISOString()
       : null;
 
-    res.status(200).json({
-      logs,
-      nextStartAfter
-    });
+    res.status(200).json({ logs: limitedLogs, nextStartAfter });
 
   } catch (error) {
     console.error("Erreur récupération logs:", error);

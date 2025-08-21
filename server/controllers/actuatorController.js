@@ -87,69 +87,101 @@ const actuatorController = {
     }
   },
   
-  async sendStatusToESP32(req, res) {
-    try {
-      const { id, name } = req.params; // id optionnel, name nécessaire si création
-      const newStatus = req.body.status;
+  /**
+   * Endpoint utilisé par l'ESP32 (POST /esp32/status)
+   * Accepte un payload JSON et upsert/update les actionneurs (pompe, relay, etc.)
+   */
+ async sendStatusToESP32(req, res) {
+  try {
+    const data = req.body; // ex: { pompe: 'on', relay: 'off' }
 
-      if (typeof newStatus === 'undefined') {
-        return res.status(400).json({ error: "Statut manquant dans la requête" });
-      }
-
-      let actuatorData;
-
-      // 1️⃣ Récupérer ou créer l'actionneur
-      if (id) {
-        const actuatorRef = db.collection("actuators").doc(id);
-        const snap = await actuatorRef.get();
-
-        if (!snap.exists) {
-          if (!name) return res.status(400).json({ error: "Nom requis pour créer un nouvel actionneur" });
-          actuatorData = await Actuator.upsertByName(name, newStatus);
-        } else {
-          await actuatorRef.update({ status: newStatus, updatedAt: new Date() });
-          actuatorData = { id: snap.id, ...snap.data(), status: newStatus };
-        }
-      } else {
-        if (!name) return res.status(400).json({ error: "Nom requis pour créer un actionneur" });
-        actuatorData = await Actuator.upsertByName(name, newStatus);
-      }
-
-      const actuatorRef = db.collection("actuators").doc(actuatorData.id);
-
-      // 2️⃣ Envoi initial du statut
-      broadcast({
-        type: "actuatorStatus",
-        id: actuatorData.id,
-        status: actuatorData.status
-      });
-
-      // 3️⃣ Listener temps réel global (évite doublons)
-      if (!listenersMap.has(actuatorData.id)) {
-        const unsubscribe = actuatorRef.onSnapshot((doc) => {
-          if (doc.exists) {
-            const data = doc.data();
-            broadcast({
-              type: "actuatorStatus",
-              id: doc.id,
-              status: data.status
-            });
-          }
-        });
-        listenersMap.set(actuatorData.id, unsubscribe);
-      }
-
-      res.json({
-        success: true,
-        message: "Statut mis à jour et listener temps réel activé pour l'ESP32",
-        data: actuatorData
-      });
-
-    } catch (err) {
-      console.error(err);
-      res.status(500).json({ error: "Erreur lors de l'envoi du statut" });
+    if (!data || typeof data !== 'object' || Array.isArray(data)) {
+      console.log("[ESP32] Données invalides :", data);
+      return res.status(400).json({ error: "Données invalides reçues" });
     }
+
+    console.log("[ESP32] Données reçues :", data);
+
+    const actuatorsCollection = db.collection('actuators');
+    const logsCollection = db.collection('actuatorLogs'); // historique
+    const INTERVAL_MINUTES = 5;
+    const MAX_LOGS = 5;
+
+    const updatedActuators = [];
+
+    for (const [rawKey, rawValue] of Object.entries(data)) {
+      const key = rawKey.toLowerCase().trim(); // nom canonique
+      const value = ["on", "true", "1", "yes", true].includes(rawValue.toString().toLowerCase()) ? true : false;
+
+      let actuatorId;
+      let actuatorRef;
+
+      // Cherche l'actionneur existant
+      const snap = await actuatorsCollection.where('name', '==', key).limit(1).get();
+      if (!snap.empty) {
+        actuatorRef = snap.docs[0].ref;
+        actuatorId = snap.docs[0].id;
+        await actuatorRef.update({ status: value, updatedAt: admin.firestore.FieldValue.serverTimestamp() });
+      } else {
+        const newDoc = await actuatorsCollection.add({
+          name: key,
+          status: value,
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          updatedAt: admin.firestore.FieldValue.serverTimestamp()
+        });
+        actuatorRef = newDoc;
+        actuatorId = newDoc.id;
+      }
+
+      // Limite de logs pour éviter de spammer Firestore
+      const cutoffDate = new Date(Date.now() - INTERVAL_MINUTES * 60000);
+      const cutoffTs = admin.firestore.Timestamp.fromDate(cutoffDate);
+
+      await db.runTransaction(async (transaction) => {
+        const recentSnap = await transaction.get(
+          logsCollection
+            .where('actuatorId', '==', actuatorId)
+            .where('timestamp', '>', cutoffTs)
+        );
+
+        if (recentSnap.size < MAX_LOGS) {
+          const logRef = logsCollection.doc();
+          transaction.set(logRef, {
+            actuatorId,
+            name: key,
+            status: value,
+            timestamp: admin.firestore.FieldValue.serverTimestamp()
+          });
+          console.log(`Log actionneur enregistré : ${key} = ${value}`);
+        } else {
+          console.log(`⛔ Limite atteinte pour ${key} dans les ${INTERVAL_MINUTES} dernières minutes`);
+        }
+      });
+
+      // Broadcast temps réel
+      try {
+        broadcast({ type: "actuatorStatus", id: actuatorId, name: key, status: value });
+        console.log(`[ESP32] Broadcast envoyé : ${key} => ${value}`);
+      } catch (e) {
+        console.warn("[ESP32] Erreur broadcast:", e.message || e);
+      }
+
+      updatedActuators.push({ name: key, status: value });
+    }
+
+    return res.json({
+      success: true,
+      message: "Actionneur(s) mis à jour et listener activé",
+      data: updatedActuators
+    });
+
+  } catch (err) {
+    console.error("[ESP32] Erreur lors de l'envoi du statut :", err);
+    return res.status(500).json({ error: "Erreur lors de l'envoi du statut" });
   }
+}
+
+
 };
 
 module.exports = actuatorController;
