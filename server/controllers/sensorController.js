@@ -100,6 +100,8 @@ const sensorController = {
     }
   },
   
+sensorCache: {}, // Cache côté serveur: name -> { id, lastLogTimestamp }
+
 async handleIncomingFromWebSocket(data) {
   try {
     if (!data || typeof data !== 'object') {
@@ -107,129 +109,131 @@ async handleIncomingFromWebSocket(data) {
     }
 
     const sensorsCollection = db.collection('sensors');
+    const actuatorsCollection = db.collection('actuators');
     const logsCollection = db.collection('logs');
+    const batch = db.batch();
 
     const INTERVAL_MINUTES = 5;
-    const MAX_LOGS = 5;
+    const now = new Date();
+    const cutoffMs = INTERVAL_MINUTES * 60000;
 
     for (const [key, value] of Object.entries(data)) {
-
-      if (key === 'pompe') {
-        // On utilise la méthode upsertByName de la classe Actuator
-        const result = await Actuator.upsertByName("Pompe", value);
-
-        // Optionnel : enregistrer un log pour la pompe
-        const actuatorId = result.id;
-        const now = new Date();
-        const cutoffDate = new Date(now.getTime() - INTERVAL_MINUTES * 60000);
-        const cutoffTs = admin.firestore.Timestamp.fromDate(cutoffDate);
-
-        await db.runTransaction(async (transaction) => {
-          const recentQuery = logsCollection
-            .where("sensorId", "==", actuatorId)
-            .where("timestamp", ">", cutoffTs);
-
-          const recentSnap = await transaction.get(recentQuery);
-
-          if (recentSnap.size < MAX_LOGS) {
-            const newLogRef = logsCollection.doc();
-            transaction.set(newLogRef, {
-              sensorId: actuatorId,
-              name: "Pompe",
-              value,
-              type: 'actuator',
-              unit: '',
-              timestamp: admin.firestore.FieldValue.serverTimestamp()
-            });
-            console.log(`Log actionneur enregistré : Pompe = ${value}`);
-          } else {
-            console.log(`⛔ Limite atteinte pour la pompe`);
-          }
-        });
-
-        continue; // passe à la prochaine mesure
-      }
-
-      // Gestion des capteurs classiques
       const type = key === 'temperature' ? 'temperature'
                  : key === 'soil' ? 'humidity'
-                 : key === 'gas' ? 'gas' : 'unknown';
-
+                 : key === 'gas' ? 'gas'
+                 : key === 'pompe' ? 'actuator'
+                 : 'unknown';
       const unit = key === 'temperature' ? '°C'
-                 : key === 'soil' ? '%'
+                 : key === 'soil' ? '%' 
                  : key === 'gas' ? 'ppm' : '';
-
       const name = key === 'soil' ? 'Humidité du sol'
                  : key === 'temperature' ? 'Température'
-                 : key === 'gas' ? 'Gaz' : key;
+                 : key === 'gas' ? 'Gaz'
+                 : key === 'pompe' ? 'Pompe'
+                 : key;
 
-      // Cherche capteur existant
-      const existingSensorSnapshot = await sensorsCollection
-        .where('name', '==', name)
-        .limit(1)
-        .get();
+      let sensorDocRef, sensorId;
 
-      let sensorId;
-      let sensorDocRef;
+      // --- Gestion de l'actionneur ---
+      if (key === 'pompe') {
+        const result = await Actuator.upsertByName("Pompe", value);
+        sensorId = result.id;
+        sensorDocRef = actuatorsCollection.doc(sensorId);
 
-      if (!existingSensorSnapshot.empty) {
-        const doc = existingSensorSnapshot.docs[0];
-        sensorDocRef = doc.ref;
-        sensorId = doc.id;
-
+        // Mise à jour valeur en temps réel
         await sensorDocRef.update({
           value,
           updatedAt: admin.firestore.FieldValue.serverTimestamp()
         });
+
       } else {
-        const newSensor = {
+        // --- Capteur classique ---
+        const cacheEntry = this.sensorCache[name];
+        if (cacheEntry) {
+          sensorId = cacheEntry.id;
+          sensorDocRef = sensorsCollection.doc(sensorId);
+        } else {
+          const existingSensorSnapshot = await sensorsCollection
+            .where('name', '==', name)
+            .limit(1)
+            .get();
+
+          if (!existingSensorSnapshot.empty) {
+            const doc = existingSensorSnapshot.docs[0];
+            sensorId = doc.id;
+            sensorDocRef = doc.ref;
+          } else {
+            const newDocRef = sensorsCollection.doc();
+            batch.set(newDocRef, {
+              name,
+              value,
+              type,
+              unit,
+              createdAt: admin.firestore.FieldValue.serverTimestamp(),
+              updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+              lastLogTimestamp: admin.firestore.FieldValue.serverTimestamp()
+            });
+            sensorId = newDocRef.id;
+            sensorDocRef = newDocRef;
+          }
+
+          // S'assurer que le cache existe
+          this.sensorCache[name] = { id: sensorId, lastLogTimestamp: 0 };
+        }
+
+        // Mise à jour valeur en temps réel
+        await sensorDocRef.update({
+          value,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp()
+        });
+      }
+
+      // --- Gestion des logs toutes les 5 min ---
+      // S'assurer que le cache existe avant d'accéder à lastLogTimestamp
+      if (!this.sensorCache[name]) {
+        this.sensorCache[name] = { id: sensorId, lastLogTimestamp: 0 };
+      }
+
+      let lastLogTime = this.sensorCache[name].lastLogTimestamp || 0;
+      if (!lastLogTime) {
+        const sensorDoc = await sensorDocRef.get();
+        lastLogTime = sensorDoc.exists && sensorDoc.data().lastLogTimestamp
+          ? sensorDoc.data().lastLogTimestamp.toMillis()
+          : 0;
+      }
+
+      if (now.getTime() - lastLogTime >= cutoffMs) {
+        const newLogRef = logsCollection.doc();
+        batch.set(newLogRef, {
+          sensorId,
           name,
           value,
           type,
           unit,
-          createdAt: admin.firestore.FieldValue.serverTimestamp(),
-          updatedAt: admin.firestore.FieldValue.serverTimestamp()
-        };
-        const newDocRef = await sensorsCollection.add(newSensor);
-        sensorId = newDocRef.id;
-        sensorDocRef = newDocRef;
+          timestamp: admin.firestore.FieldValue.serverTimestamp()
+        });
+        batch.update(sensorDocRef, {
+          lastLogTimestamp: admin.firestore.FieldValue.serverTimestamp()
+        });
+
+        // Mettre à jour lastLogTimestamp dans le cache
+        this.sensorCache[name].lastLogTimestamp = now.getTime();
+
+        console.log(`Log programmé : ${name} = ${value}${unit}`);
+      } else {
+        console.log(`⛔ Limite atteinte pour ${name}`);
       }
-
-      const now = new Date();
-      const cutoffDate = new Date(now.getTime() - INTERVAL_MINUTES * 60000);
-      const cutoffTs = admin.firestore.Timestamp.fromDate(cutoffDate);
-
-      await db.runTransaction(async (transaction) => {
-        const recentQuery = logsCollection
-          .where("sensorId", "==", sensorId)
-          .where("timestamp", ">", cutoffTs);
-
-        const recentSnap = await transaction.get(recentQuery);
-
-        if (recentSnap.size < MAX_LOGS) {
-          const newLogRef = logsCollection.doc();
-          transaction.set(newLogRef, {
-            sensorId,
-            name,
-            value,
-            type,
-            unit,
-            timestamp: admin.firestore.FieldValue.serverTimestamp()
-          });
-          console.log(`Log capteur enregistré : ${name} = ${value}${unit}`);
-        } else {
-          console.log(`⛔ Limite atteinte pour ${name}`);
-        }
-      });
     }
+
+    // --- Commit batch pour logs ---
+    await batch.commit();
+    console.log("Batch Firestore exécuté avec succès");
 
   } catch (err) {
     console.error("Erreur dans handleIncomingFromWebSocket :", err);
     console.error("Données reçues :", data);
   }
 }
-
-
 
 };
 

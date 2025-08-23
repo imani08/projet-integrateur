@@ -2,14 +2,16 @@ const { db, admin } = require("../services/firebase");
 const Log = require("../models/log");
 
 const MAX_PER_SENSOR = 5;
+const MAX_READ_DOCS = 500; // Limite stricte pour réduire les lectures Firestore
 
 exports.getLogs = async (req, res) => {
   try {
     const limit = parseInt(req.query.limit) || 50;
 
+    // --- Lire seulement le nombre minimum nécessaire pour éviter les lectures excessives ---
     const snapshot = await db.collection("logs")
       .orderBy("timestamp", "desc")
-      .limit(limit * 10)
+      .limit(Math.min(limit * 10, MAX_READ_DOCS)) // ne lit jamais plus de MAX_READ_DOCS
       .get();
 
     if (snapshot.empty) {

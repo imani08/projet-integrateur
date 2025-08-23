@@ -2,6 +2,8 @@ const Actuator = require("../models/Actuator");
 const { db } = require('../services/firebase');
 const { broadcast } = require('../services/websocketService');
 
+ const actuatorCache = {}; // Cache côté serveur: key -> lastLogTimestamp
+
 const actuatorController = {
   async getAll(req, res) {
     try {
@@ -91,7 +93,9 @@ const actuatorController = {
    * Endpoint utilisé par l'ESP32 (POST /esp32/status)
    * Accepte un payload JSON et upsert/update les actionneurs (pompe, relay, etc.)
    */
- async sendStatusToESP32(req, res) {
+
+
+async sendStatusToESP32(req, res) {
   try {
     const data = req.body; // ex: { pompe: 'on', relay: 'off' }
 
@@ -100,86 +104,102 @@ const actuatorController = {
       return res.status(400).json({ error: "Données invalides reçues" });
     }
 
-    console.log("[ESP32] Données reçues :", data);
-
     const actuatorsCollection = db.collection('actuators');
-    const logsCollection = db.collection('actuatorLogs'); // historique
+    const logsCollection = db.collection('actuatorLogs');
     const INTERVAL_MINUTES = 5;
-    const MAX_LOGS = 5;
+    const cutoffMs = INTERVAL_MINUTES * 60000;
+    const batch = db.batch();
 
-    const updatedActuators = [];
+    const now = Date.now();
+
+    // ⚡ Réponse finale basée sur Firestore (priorité pour ESP32)
+    const firestoreStates = {};
 
     for (const [rawKey, rawValue] of Object.entries(data)) {
-      const key = rawKey.toLowerCase().trim(); // nom canonique
-      const value = ["on", "true", "1", "yes", true].includes(rawValue.toString().toLowerCase()) ? true : false;
+      const key = rawKey.toLowerCase().trim();
+      const value = ["on", "true", "1", "yes", true].includes(
+        rawValue.toString().toLowerCase()
+      );
 
-      let actuatorId;
-      let actuatorRef;
+      let actuatorRef, actuatorId;
+      let currentStatus = value; // valeur par défaut (si pas trouvé en DB)
 
-      // Cherche l'actionneur existant
+      // Vérifier si l'actionneur existe déjà dans Firestore
       const snap = await actuatorsCollection.where('name', '==', key).limit(1).get();
       if (!snap.empty) {
         actuatorRef = snap.docs[0].ref;
         actuatorId = snap.docs[0].id;
-        await actuatorRef.update({ status: value, updatedAt: admin.firestore.FieldValue.serverTimestamp() });
+        const docData = snap.docs[0].data();
+
+        // ⚡ L'état Firestore est prioritaire
+        currentStatus = docData.status ?? value;
       } else {
-        const newDoc = await actuatorsCollection.add({
+        // Créer un nouvel actionneur
+        const newDoc = actuatorsCollection.doc();
+        batch.set(newDoc, {
           name: key,
           status: value,
           createdAt: admin.firestore.FieldValue.serverTimestamp(),
-          updatedAt: admin.firestore.FieldValue.serverTimestamp()
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          lastLogTimestamp: admin.firestore.FieldValue.serverTimestamp()
         });
         actuatorRef = newDoc;
         actuatorId = newDoc.id;
       }
 
-      // Limite de logs pour éviter de spammer Firestore
-      const cutoffDate = new Date(Date.now() - INTERVAL_MINUTES * 60000);
-      const cutoffTs = admin.firestore.Timestamp.fromDate(cutoffDate);
+      // Vérifier limite pour les logs
+      const lastLogTime = actuatorCache[key] || 0;
+      if (now - lastLogTime >= cutoffMs) {
+        const logRef = logsCollection.doc();
+        batch.set(logRef, {
+          actuatorId,
+          name: key,
+          status: currentStatus,
+          timestamp: admin.firestore.FieldValue.serverTimestamp()
+        });
+        batch.update(actuatorRef, {
+          lastLogTimestamp: admin.firestore.FieldValue.serverTimestamp(),
+          status: currentStatus,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp()
+        });
 
-      await db.runTransaction(async (transaction) => {
-        const recentSnap = await transaction.get(
-          logsCollection
-            .where('actuatorId', '==', actuatorId)
-            .where('timestamp', '>', cutoffTs)
-        );
-
-        if (recentSnap.size < MAX_LOGS) {
-          const logRef = logsCollection.doc();
-          transaction.set(logRef, {
-            actuatorId,
-            name: key,
-            status: value,
-            timestamp: admin.firestore.FieldValue.serverTimestamp()
-          });
-          console.log(`Log actionneur enregistré : ${key} = ${value}`);
-        } else {
-          console.log(`⛔ Limite atteinte pour ${key} dans les ${INTERVAL_MINUTES} dernières minutes`);
-        }
-      });
-
-      // Broadcast temps réel
-      try {
-        broadcast({ type: "actuatorStatus", id: actuatorId, name: key, status: value });
-        console.log(`[ESP32] Broadcast envoyé : ${key} => ${value}`);
-      } catch (e) {
-        console.warn("[ESP32] Erreur broadcast:", e.message || e);
+        actuatorCache[key] = now;
+        console.log(`Log actionneur planifié : ${key} = ${currentStatus}`);
       }
 
-      updatedActuators.push({ name: key, status: value });
+      // ⚡ Réponse ESP32 = état Firestore prioritaire
+      firestoreStates[key] = currentStatus ? "on" : "off";
     }
 
+    // Commit Firestore si nécessaire
+    if (batch._ops && batch._ops.length > 0) {
+      await batch.commit();
+      console.log("Batch Firestore exécuté avec succès");
+    }
+
+    // Broadcast temps réel (frontend)
+    try {
+      Object.entries(firestoreStates).forEach(([name, status]) => {
+        broadcast({ type: "actuatorStatus", name, status });
+      });
+    } catch (e) {
+      console.warn("[ESP32] Erreur broadcast:", e.message || e);
+    }
+
+    // ⚡ Réponse directe ESP32 (basée sur Firestore en priorité)
     return res.json({
       success: true,
-      message: "Actionneur(s) mis à jour et listener activé",
-      data: updatedActuators
+      actuators: firestoreStates
+      // ex: { pompe: "on", relay: "off" }
     });
 
   } catch (err) {
-    console.error("[ESP32] Erreur lors de l'envoi du statut :", err);
+    console.error("[ESP32] Erreur sendStatusToESP32 :", err);
     return res.status(500).json({ error: "Erreur lors de l'envoi du statut" });
   }
 }
+
+
 
 
 };
