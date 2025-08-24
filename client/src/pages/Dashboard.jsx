@@ -15,10 +15,22 @@ const SENSOR_UNITS = {
   temperature: "°C",
   humidity: "%",
   waterLevel: "cm",
-  gas: "ppm",
+  co2: "ppm",      // changé "gas" en "co2" pour correspondre à tes données
   pump: "",
   light: "lx"
 };
+
+const SENSOR_LABELS = {
+  temperature: "Température",
+  humidity: "Humidité",
+  waterLevel: "Niveau d'eau",
+  gas: "Gaz",
+  co2: "CO₂",
+  pump: "Pompe",
+  light: "Luminosité"
+};
+
+
 
 const SENSOR_THRESHOLDS = {
   temperature: { low: 18, high: 30 },
@@ -263,27 +275,34 @@ return (
 
       {/* --- VUE D'ENSEMBLE --- */}
       <Tab eventKey="overview" title="Vue d'ensemble">
-        <Row className="mb-4">
-          <Col xs={12}>
-            <h2 className="mb-3">Statistiques en Temps Réel</h2>
-          </Col>
+  <Row className="mb-4">
+    <Col xs={12}>
+      <h2 className="mb-3">Statistiques en Temps Réel</h2>
+    </Col>
 
-          {Object.entries(sensorData).map(([key, value], index) => (
-            <Col xs={12} md={6} lg={4} className="mb-4" key={key}>
-              <DashboardCard 
-                title={key.charAt(0).toUpperCase() + key.slice(1).replace(/([A-Z])/g, ' $1')}
-                value={
-                  key === 'temperature' ? `${value}°C` : 
-                  key === 'co2' ? `${value} ppm` : 
-                  key === 'light' ? `${value} lux` : `${value}%`
-                }
-                icon={['temperature', 'humidity', 'co2', 'light', 'waterLevel'][index]}
-                color={COLORS[index % COLORS.length]}
-              />
-            </Col>
-          ))}
-        </Row>
-      </Tab>
+    {Object.entries(sensorData).map(([key, value], index) => (
+      <Col xs={12} md={6} lg={4} className="mb-4" key={key}>
+        <DashboardCard 
+          title={SENSOR_LABELS[key] || key}
+          value={`${value} ${SENSOR_UNITS[key] || ''}`}
+          icon={['température', 'humidité', 'co2', 'lumière', "Niveau d'eau"][index]}
+          color={COLORS[index % COLORS.length]}
+        />
+      </Col>
+    ))}
+  </Row>
+
+  {/* --- TEXTE STATIQUE --- */}
+  <Row className="mt-4">
+  <Col xs={12}>
+    <div style={{ textAlign: 'center', color: '#555', fontWeight: '500', fontSize: '0.95rem' }}>
+      Ce tableau de bord vous offre une vision en temps réel de vos capteurs et actionneurs. 
+      Chaque donnée affichée reflète l’état actuel du système pour vous permettre de prendre des décisions éclairées et d’optimiser vos opérations en toute confiance.
+    </div>
+  </Col>
+</Row>
+
+</Tab>
 
       {/* --- ANALYSE CAPTEURS --- */}
 <Tab eventKey="sensors" title="Analyse des Capteurs">
@@ -368,79 +387,137 @@ return (
 
       {/* --- GESTION ACTIONNEURS --- */}
       <Tab eventKey="actuators" title="Gestion des Actionneurs">
-        <Row className="mb-4">
-          <Col xs={12}>
-            <h2 className="mb-3">Statut des Actionneurs</h2>
-            {actuators.length === 0 ? (
-              <Alert variant="info">Aucun actionneur disponible</Alert>
-            ) : (
-              <Row>
-                {/* Graphiques Actionneurs */}
-                <Col md={6} className="mb-4">
-                  <div style={{ height: '300px', background: '#fff', borderRadius: '10px', padding: '20px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}>
-                    <ResponsiveContainer width="100%" height="100%">
-                      <PieChart>
-                        <Pie
-                          data={actuatorChartData}
-                          cx="50%"
-                          cy="50%"
-                          labelLine={false}
-                          outerRadius={100}
-                          fill="#8884d8"
-                          dataKey="value"
-                          label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
-                        >
-                          {actuatorChartData.map((entry, index) => (
-                            <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                          ))}
-                        </Pie>
-                        <Tooltip />
-                        <Legend />
-                      </PieChart>
-                    </ResponsiveContainer>
-                  </div>
-                </Col>
+  <Row className="mb-5">
+    <Col xs={12}>
+      <h2 className="mb-4" style={{ fontWeight: 700, color: "#212529" }}>Statut des Actionneurs</h2>
 
-                <Col md={6} className="mb-4">
-                  <div style={{ height: '300px', background: '#fff', borderRadius: '10px', padding: '20px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}>
-                    <h4 className="text-center mb-3">Répartition par Zone</h4>
-                    <ResponsiveContainer width="100%" height="80%">
-                      <BarChart data={zoneDistributionData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
-                        <CartesianGrid strokeDasharray="3 3" />
-                        <XAxis dataKey="name" />
-                        <YAxis />
-                        <Tooltip />
-                        <Bar dataKey="value" fill="#8884D8" name="Nombre d'actionneurs" />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </div>
-                </Col>
-              </Row>
-            )}
+      {actuators.length === 0 ? (
+        <Alert variant="info" style={{ fontSize: "1rem", borderRadius: "12px" }}>
+          Aucun actionneur disponible
+        </Alert>
+      ) : (
+        <Row className="g-4">
+          {/* PieChart Statut */}
+          <Col md={6}>
+            <div className="dashboard-card">
+              <h5 className="text-center mb-3" style={{ fontWeight: 500, color: "#495057" }}>Répartition des Statuts</h5>
+              <ResponsiveContainer width="100%" height={250}>
+                <PieChart>
+                  <Pie
+                    data={actuatorChartData}
+                    cx="50%"
+                    cy="50%"
+                    outerRadius={90}
+                    dataKey="value"
+                    label={({ name, percent }) => `${name}: ${(percent*100).toFixed(0)}%`}
+                    labelLine={false}
+                  >
+                    {actuatorChartData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip />
+                  <Legend verticalAlign="bottom" height={36}/>
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
           </Col>
-        </Row>
 
-        {/* Liste Actionneurs */}
-        <Row>
-          {actuators.map((actuator) => {
-            const status = normalizeStatus(actuator.status);
-            return (
-              <Col xs={12} md={6} lg={4} className="mb-4" key={actuator.id}>
-                <DashboardCard 
-                  title={actuator.name} 
-                  value={`Status: ${status.toUpperCase()}`} 
-                  icon="plug"
-                  color={status === 'on' ? '#00C49F' : '#FF8042'}
-                />
-                <div className="text-center p-2" style={{ background: '#f8f9fa', borderRadius: '8px' }}>
-                  <p style={{ color: 'black' }}><strong>Zone:</strong> {actuator.zone || 'Non spécifiée'}</p>
-                  <p style={{ color: 'black' }}><strong>Type:</strong> {actuator.type || 'Générique'}</p>
-                </div>
-              </Col>
-            );
-          })}
+          {/* BarChart Zone */}
+<Col md={6}>
+  <div className="dashboard-card">
+    <h5 className="text-center mb-3" style={{ fontWeight: 500, color: "#495057" }}>
+      Répartition des actionneurs par zone
+    </h5>
+    <ResponsiveContainer width="100%" height={250}>
+      <BarChart
+        data={zoneDistributionData}
+        margin={{ top: 20, right: 20, left: 10, bottom: 5 }}
+      >
+        <CartesianGrid strokeDasharray="3 3" />
+        <XAxis
+          dataKey="name"
+          tick={{ fontSize: 12, fill: "#495057" }}
+          label={{ value: "Zones", position: "insideBottom", offset: -5, fontSize: 13 }}
+        />
+        <YAxis
+          tick={{ fontSize: 12, fill: "#495057" }}
+          label={{ value: "Nombre d'actionneurs", angle: -90, position: "insideLeft", fontSize: 13 }}
+        />
+        <Tooltip formatter={(value) => [`${value}`, "Actionneurs"]} />
+        <Bar
+          dataKey="value"
+          fill="#4e73df"
+          radius={[6, 6, 0, 0]}
+          name="Actionneurs"
+        >
+          {zoneDistributionData.map((entry, index) => (
+            <text
+              key={`label-${index}`}
+              x={index * (250 / zoneDistributionData.length) + 12} // ajustement position
+              y={250 - (entry.value * 5)} // ajuster selon l’échelle
+              textAnchor="middle"
+              fill="#000"
+              fontSize={12}
+            >
+              {entry.value}
+            </text>
+          ))}
+        </Bar>
+      </BarChart>
+    </ResponsiveContainer>
+  </div>
+</Col>
+
         </Row>
-      </Tab>
+      )}
+    </Col>
+  </Row>
+
+  {/* Liste Actionneurs */}
+  <Row className="g-4">
+    {actuators.map(actuator => {
+      const status = normalizeStatus(actuator.status);
+      const isOn = status === "on";
+
+      return (
+        <Col xs={12} md={6} lg={4} key={actuator.id}>
+          <div className="dashboard-card hover-scale" style={{ padding: "20px", position: "relative" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "10px" }}>
+              <h5 style={{ fontWeight: 600 }}>{actuator.name}</h5>
+              <span style={{
+                padding: "5px 10px",
+                borderRadius: "20px",
+                fontWeight: 500,
+                fontSize: "0.85rem",
+                backgroundColor: isOn ? "#d4f7e1" : "#ffe3d3",
+                color: isOn ? "#00C49F" : "#FF8042"
+              }}>
+                {status.toUpperCase()}
+              </span>
+            </div>
+
+            <div style={{ marginBottom: "15px" }}>
+              <DashboardCard 
+                title="" 
+                value="" 
+                icon="plug"
+                color={isOn ? "#00C49F" : "#FF8042"}
+                hideTitle
+              />
+            </div>
+
+            <div style={{ background: "#f8f9fa", borderRadius: "12px", padding: "12px", textAlign: "center" }}>
+              <p style={{ margin: 0, color: "#495057" }}><strong>Zone:</strong> {actuator.zone || "Non spécifiée"}</p>
+              <p style={{ margin: 0, color: "#495057" }}><strong>Type:</strong> {actuator.type || "Générique"}</p>
+            </div>
+          </div>
+        </Col>
+      );
+    })}
+  </Row>
+</Tab>
+
 
     </Tabs>
   </Container>

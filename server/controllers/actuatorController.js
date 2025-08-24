@@ -88,12 +88,6 @@ const actuatorController = {
       res.status(500).json({ error: "Erreur lors de la suppression de l'actionneur" });
     }
   },
-  
-  /**
-   * Endpoint utilisé par l'ESP32 (POST /esp32/status)
-   * Accepte un payload JSON et upsert/update les actionneurs (pompe, relay, etc.)
-   */
-
 
 async sendStatusToESP32(req, res) {
   try {
@@ -198,9 +192,6 @@ async sendStatusToESP32(req, res) {
     return res.status(500).json({ error: "Erreur lors de l'envoi du statut" });
   }
 }
-
-
-
 
 };
 
